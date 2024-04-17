@@ -1,0 +1,42 @@
+csvname = 'newcorgis-20220618.csv'
+cursor.execute('''
+               SELECT EXISTS(SELECT 1
+               FROM ingest
+               WHERE Filename = '%s')
+                '''%(csvname))
+y = cursor.fetchone()
+if (y[0] == True): #it exists
+    print("File has already been processed.")
+else:
+    print("The new file has been accepted for processing.")
+    df2 = pd.read_csv(csvname)
+    df2['Weight'] = round(df2['Weight'])
+    df2['Weight']= df2['Weight'].astype('int')
+    df2['Gender'].replace(to_replace = 'Fem', value= 'F',inplace= True)
+    df2['Breed'].replace(to_replace = ['PWC','CWC'], value= ['Pem', 'Cardi'],inplace= True)
+    print(df2)
+    for x in df2.index:
+        cursor.execute('''
+        INSERT INTO Corgi (CorgName, breed, Gender, Weight, Age, fromfile)
+        VALUES ('%s', '%s', '%s', %d, %.1f, '%s') ''' % (df2.loc[x]['Name'], df2.loc[x]['Breed'],df2.loc[x]['Gender'],df2.loc[x]['Weight'],df2.loc[x]['Age'], csvname))
+        conn.commit()
+        print("Record created for '%s'"%(df2.loc[x]['Name']))
+    cursor.execute(''' 
+        INSERT INTO ingest(Filename, Whendone)
+        VALUES('%s',CURRENT_TIMESTAMP)
+        '''%(csvname))
+    conn.commit()
+    print("Ingestion complete for %s"%(csvname))
+    conn.close()
+
+    conn = psycopg2.connect(
+    database= 'corgirace',
+    user= '0',
+    password= '0',
+    host= '0',
+    port= '5432'
+)
+cursor = conn.cursor()
+val_query = "SELECT * FROM ingest"
+validate_df = pd.read_sql(val_query, conn)
+print(validate_df)
