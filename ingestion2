@@ -1,0 +1,117 @@
+conn = psycopg2.connect(
+    database='corgirace',
+    user='0',
+    password= '0',
+    host='0',
+    port='5432'
+)
+cursor = conn.cursor()
+
+for l in list1:
+    cursor.execute('''
+                SELECT EXISTS(SELECT 1
+                FROM ingest
+                WHERE Filename = '%s')
+                    '''%(l))
+    y = cursor.fetchone()
+    
+    if (l[-3:] != 'csv'):
+        pass #skip the file
+    elif (y[0] == True): #it exists
+        print(f"{l} has already been processed.")
+    else: #file needs to be processed
+        
+        #make sure to do try and except around reading the file and remember to close the file
+        infile = open(path+'/' + l,'r')
+        fl = 1 #skipping first line with this variable
+        issueslist = [] #want this to reset when we go through another record in the table
+        for x in infile:
+            if fl == 1:
+                fl = 0
+            else:
+                x = x.strip()
+                z = x.strip().split(',')
+                
+                if len(z) > 5:#if else to check for right amount of columns,too few and too many conditions and append issue, don't append non issues
+                    issueslist.append("Too Many Columns") 
+                    issueslist.clear()    
+                    break
+                elif len(z) < 5:   
+                    issueslist.append("Too Few Columns")
+                    issueslist.clear()   
+                    break
+
+                if len(z[0]) < 1:#if else to check name column
+                    issueslist.append("Name Too Short")
+                elif len(z[0]) > 100:
+                    issueslist.append("Name Too Long")
+                else:
+                    if (((z[1][0].upper()) != 'P')) & (((z[1][0].upper())!='C')):
+                        issueslist.append("Breed Issue")
+                        
+                    if((z[2].upper() != 'M'))&((z[2].upper() != 'F'))&((z[2].upper() != 'NM'))&((z[2].upper() != 'SF')):#if else to check gender column
+                        issueslist.append("Gender Col Issue")
+                    try:
+                        float(z[3]) #using float here just in case the value contains a decimal. Will change when inserting
+                        if float(z[3]) < 15:
+                            issueslist.append("Weight Too Low")
+                        elif float(z[3]) > 35:
+                            issueslist.append("Weight Too High")
+                    except:# to check weight column
+                        issueslist.append("Weight Non-Numeric")
+                    try:
+                        float(z[4])
+                        if float(z[4]) < 1:
+                            issueslist.append("Age Too Low")
+                        elif float(z[4]) > 10:
+                            issueslist.append("Age Too High")
+                    except:
+                        issueslist.append("Age Non-Numeric")
+                    
+                    if len(issueslist) == 0:  #thought it looked odd to print a blank list here
+                        
+
+
+                        z[3] = round(float(z[3]))
+                        z[3] = int(z[3])
+                        z[4] = round(float(z[4])*2)/2
+                        if (z[1] == 'PWC') | (z[1] =='Corgi Pembroke') | (z[1] =='Pembroke Welsh Corgi') :
+                            z[1] = 'Pem'
+                        elif (z[1] == 'Pembrok') | (z[1] == 'Pembroke') | (z[1] =='PemWC') :
+                            z[1] = 'Pem'      
+                        elif (z[1] == 'Pembroke Welsh') | (z[1] =='Pemmer' ):
+                            z[1] = 'Pem' 
+                            print(z[1])
+                        elif(z[1] == 'CWC') | (z[1] == 'Cardigan'):
+                            z[1] = 'Cardi'
+                        
+                        z[0] = z[0].replace('\'','')
+                        
+                        cursor.execute('''
+                            INSERT INTO Corgi (CorgName, breed, Gender, Weight, Age, fromfile)
+                            VALUES ('%s', '%s', '%s', %d, %.1f, '%s') ''' % (z[0], z[1],z[2],z[3],z[4], l))
+                        conn.commit()
+                        print(f"Record created for {z[0]}\n")
+    
+
+                    
+                    else:
+                        
+                        x = x.replace(', ','|')
+                        issues = '|'.join(issueslist)
+                        
+                        cursor.execute('''
+                            INSERT INTO corgi_exception (except_record, origin_file, issues, except_timestamp)
+                            VALUES ('%s', '%s', '%s', CURRENT_TIMESTAMP) ''' % (x,l,issues))
+                        conn.commit()
+
+                        print(f"Record for {z[0]} had these isssues: {issueslist}")
+                        
+                        issueslist.clear()
+        infile.close()    
+        cursor.execute(''' 
+        INSERT INTO ingest(Filename, Whendone)
+        VALUES('%s',CURRENT_TIMESTAMP)
+        '''%(l))
+        conn.commit()
+        print(f"Ingestion complete for {l}.")
