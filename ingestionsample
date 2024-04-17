@@ -1,0 +1,244 @@
+for x in databases:
+            
+    conn = pymssql.connect(
+            database= x, 
+            user='0user', 
+            password='password', 
+            host='transactional database host'
+            )
+    
+    if x == 'pup_sl2':
+        y = sl_maxid
+    elif x == 'pup_ph2':
+        y = ph_maxid
+    else:
+        y = bo_maxid
+
+    query = f'''
+                SELECT *
+                FROM custorder
+                WHERE orderid > {y}
+        
+    '''
+    if x == 'pup_sl2':
+        dfni = pd.read_sql(query,conn)
+        dfni['siteid'] = 'SL'
+    elif x == 'pup_ph2':
+        dfni2 = pd.read_sql(query,conn)
+        dfni2['siteid'] = 'PH'
+    else:
+        dfni3 = pd.read_sql(query,conn)
+        dfni3['siteid'] = 'BO'
+#concat dataframes into dfnewbs
+dfnewbs= pd.concat([dfni,dfni2,dfni3]) 
+dfnewbs= dfnewbs.reset_index()
+for x in dfnewbs.index:
+    conn = psycopg2.connect(
+        database='databasename',
+        user='pass',
+        password= 'pass',
+        host=' ',
+        port='5432')
+    query = f''' 
+                SELECT CONCAT(custfname,' ' , custlname) AS "customer" 
+                FROM customer AS c
+                WHERE CONCAT(custfname, ' ', custlname) = '{dfnewbs.loc[x]['custname']}'
+                AND (custphone = '{dfnewbs.loc[x]['custphone']}' OR custemail = '{dfnewbs.loc[x]['custemail']}')
+            '''
+    df = pd.read_sql(query,conn)
+
+    if df.empty:
+        #add the new customer to the database
+        z = dfnewbs.loc[x]['custname'].strip().split(' ')
+        conn = psycopg2.connect(
+            database='databasename',
+            user='pass',
+            password= 'pass',
+            host=' ',
+            port='5432')
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO customer (custfname, custlname, custphone, custemail, custstate, contactpref , pmtid, addedstamp)
+            VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s',CURRENT_TIMESTAMP) ''' % (z[0], z[1] , dfnewbs.loc[x]['custphone'] , dfnewbs.loc[x]['custemail'], dfnewbs.loc[x]['custstate'], dfnewbs.loc[x]['contactpref'],dfnewbs.loc[x]['pmtid']))
+        conn.commit()
+        print(f"Customer {dfnewbs.loc[x]['custname']} added.")
+    else:
+        #update the new customer to the database
+        z = dfnewbs.loc[x]['custname'].strip().split(' ')
+        conn = psycopg2.connect(
+            database='databasename',
+            user='pass',
+            password= 'pass',
+            host=' ',
+            port='5432')
+        cursor = conn.cursor()
+        cursor.execute(f'''
+            UPDATE customer  
+            SET custphone = '{dfnewbs.loc[x]['custphone']}'
+            WHERE custfname = '{z[0]}' AND custlname = '{z[1]}' 
+            AND (custphone = '{dfnewbs.loc[x]['custphone']}' OR custemail = '{dfnewbs.loc[x]['custemail']}')
+        ''')
+        conn.commit()
+
+        cursor.execute(f'''UPDATE customer  
+            SET custemail = '{dfnewbs.loc[x]['custemail']}'
+            WHERE custfname = '{z[0]}' AND custlname = '{z[1]}'
+            AND (custphone = '{dfnewbs.loc[x]['custphone']}' OR custemail = '{dfnewbs.loc[x]['custemail']}') 
+            ''')
+        conn.commit()
+        cursor.execute(f'''UPDATE customer  
+            SET custstate = '{dfnewbs.loc[x]['custstate']}'
+            WHERE custfname = '{z[0]}' AND custlname = '{z[1]}' 
+            AND (custphone = '{dfnewbs.loc[x]['custphone']}' OR custemail = '{dfnewbs.loc[x]['custemail']}')
+            ''')
+        conn.commit()
+        cursor.execute(f'''UPDATE customer
+            SET contactpref = '{dfnewbs.loc[x]['contactpref']}'
+            WHERE custfname = '{z[0]}' AND custlname = '{z[1]}'
+            AND (custphone = '{dfnewbs.loc[x]['custphone']}' OR custemail = '{dfnewbs.loc[x]['custemail']}') 
+            ''')
+        conn.commit()
+        cursor.execute(f'''UPDATE customer 
+            SET pmtid = '{dfnewbs.loc[x]['pmtid']}'
+            WHERE custfname = '{z[0]}' AND custlname = '{z[1]}'
+            AND (custphone = '{dfnewbs.loc[x]['custphone']}' OR custemail = '{dfnewbs.loc[x]['custemail']}') 
+            ''')
+        conn.commit()
+        cursor.execute(f'''UPDATE customer 
+            SET updatedstamp = CURRENT_TIMESTAMP
+            WHERE custfname = '{z[0]}' AND custlname = '{z[1]}'
+            AND (custphone = '{dfnewbs.loc[x]['custphone']}' OR custemail = '{dfnewbs.loc[x]['custemail']}') 
+            ''')
+        conn.commit()
+
+        print(f"Customer {dfnewbs.loc[x]['custname']} updated.")
+
+#Get new dataframe of all sales transactions
+for x in databases:
+            
+    conn = pymssql.connect(
+            database= x, 
+            user='0user', 
+            password='password', 
+            host='transactional database host'
+            )
+    
+    if x == 'pup_sl2':
+        y = sl_maxid
+    elif x == 'pup_ph2':
+        y = ph_maxid
+    else:
+        y = bo_maxid
+
+    query = f'''
+                SELECT*
+                FROM custorder AS c
+                JOIN order_line AS ol ON c.orderid = ol.orderid
+                WHERE c.orderid > {y}
+        
+    '''
+    if x == 'pup_sl2':
+        dfni = pd.read_sql(query,conn)
+        dfni['siteid'] = 'SL'
+    elif x == 'pup_ph2':
+        dfni2 = pd.read_sql(query,conn)
+        dfni2['siteid'] = 'PH'
+    else:
+        dfni3 = pd.read_sql(query,conn)
+        dfni3['siteid'] = 'BO'
+#concat dataframes into dfnewbs
+dfnewbs= pd.concat([dfni,dfni2,dfni3]) 
+dfnewbs= dfnewbs.reset_index()
+#Add to SalesOrder
+for x in dfnewbs.index:
+    z = dfnewbs.loc[x]['custname'].strip().split(' ')
+    customerid = 0
+    conn = psycopg2.connect(
+            database='databasename',
+            user='pass',
+            password= 'pass',
+            host=' ',
+            port='5432')
+    query = f''' 
+            SELECT custid, custfname,custlname
+            FROM customer
+            WHERE custfname = '{z[0]}' AND custlname = '{z[1]}'
+            AND (custphone = '{dfnewbs.loc[x]['custphone']}' OR custemail = '{dfnewbs.loc[x]['custemail']}')
+            '''
+    dfcust = pd.read_sql(query,conn)
+    customerid = dfcust.iloc[0][0]   
+    #get seller id 
+    sellerid = 0
+    conn = psycopg2.connect(
+            database='databasename',
+            user='pass',
+            password= 'pass',
+            host='data6330.cviwmuw2fykh1.us-west-2.rds.amazonaws.com',
+            port='5432')
+    query = f''' 
+            SELECT spid, CONCAT(spfname,' ',splname) AS "seller"
+            FROM salesperson
+            WHERE CONCAT(spfname,' ',splname) = '{dfnewbs.loc[x]['salesperson']}'
+            '''
+    dfsel = pd.read_sql(query,conn)
+    sellerid = dfsel.iloc[0][0]
+   
+    #salesorder
+    conn = psycopg2.connect(
+            database='',
+            user='',
+            password= '',
+            host='',
+            port='')
+    cursor = conn.cursor()
+    cursor.execute('''
+            INSERT INTO salesorder (custid, sellerid, odate, txid, tx_ingesttimestamp)
+            VALUES (%s, %d, '%s', %s, CURRENT_TIMESTAMP) ''' % (customerid,sellerid, dfnewbs.loc[x]['odate'] , dfnewbs.loc[x][1]))
+    conn.commit()
+    print(f"Order {dfnewbs.loc[x][1]} from {dfnewbs.loc[x]['siteid']} recorded.")
+
+    #get productid
+    productid = 0
+    conn = psycopg2.connect(
+            database='databasename',
+            user='pass',
+            password= 'pass',
+            host=' ',
+            port='5432')
+    query = f''' 
+            SELECT prodid, prodname
+            FROM product
+            WHERE prodname = '{dfnewbs.loc[x]['prodname']}'
+            '''
+    dfprod = pd.read_sql(query,conn)
+    productid = dfprod.iloc[0][0]
+    #get orderid
+    rorderid = 0
+    conn = psycopg2.connect(
+            database='',
+            user='',
+            password= '',
+            host='',
+            port='5432')
+    query = f''' 
+            SELECT MAX(orderid)
+            FROM salesorder
+            '''
+    dford = pd.read_sql(query,conn)
+    rorderid = dford.iloc[0][0]
+    #Add to Oline
+    conn = psycopg2.connect(
+            database='',
+            user='',
+            password= '',
+            host='',
+            port='5432')
+    cursor = conn.cursor()
+    cursor.execute('''
+            INSERT INTO oline (orderid, productid, lineqty, lineprice, linetotal)
+            VALUES (%d, %d, %s, %s, %s) ''' % (rorderid,productid,  dfnewbs.loc[x]['qty'] , (dfnewbs.loc[x]['linetotal']/dfnewbs.loc[x]['qty']), dfnewbs.loc[x]['linetotal']))
+    conn.commit()
+
+
+conn.close()
+        
