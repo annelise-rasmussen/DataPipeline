@@ -1,0 +1,51 @@
+#10 analyzing valid ids and looking up winners of dog race
+import numpy as np
+
+cid_query = "SELECT corgid, corgname FROM Corgi"
+possibleid_df = pd.read_sql(cid_query, conn)
+id_values = possibleid_df.values
+user_input = 0
+valid = 0
+while(valid == 0):
+    try:
+     
+        user_input = int(input("Enter a Corgi ID value: "))
+        if(sum(possibleid_df['corgid'] == user_input) == 1):
+            corgi_name = possibleid_df.loc[possibleid_df['corgid'] == user_input, 'corgname'].iloc[0] #chatgpt help
+            print("Results for: %s" % (corgi_name))
+            valid = 1
+        else:
+            print("Not a valid ID. Try again.")
+    except:
+        print("Invalid input. Please provide an integer ID value.")
+
+
+scorg_query = '''WITH counts_participants AS(
+                 SELECT r.raceid,r.racename, r.racedate, count(o.raceid) AS "num_racers"
+                 FROM race as r
+                 JOIN outcome as o ON r.raceid = o.raceid
+                 GROUP BY r.raceid,r.racename,r.racedate
+
+                )
+               , corgi_stats AS (
+                SELECT o.raceid, o.racetime, o.corgid, RANK() OVER(PARTITION BY o.raceid ORDER BY o.racetime) AS "finishing_position"
+                FROM corgi AS c
+                JOIN outcome AS o ON o.corgid = c.corgid 
+                )
+               ,selected_corgi_stats AS(
+                 SELECT r.raceid, c.corgid,c.racetime, c."finishing_position"
+                 FROM race as r
+                 LEFT JOIN corgi_stats as c ON r.raceid = c.raceid
+                 WHERE corgid = %d
+               )
+
+               
+               SELECT p.racename, p.racedate, p."num_racers", CASE WHEN c.corgid IS NULL THEN %d ELSE c.corgid END AS "corgid", CASE WHEN c.racetime IS NULL THEN 'DNC' ELSE cast (c.racetime as varchar) END AS "racetime", CASE WHEN c.finishing_position IS NULL THEN 'DNC' ELSE cast(c."finishing_position" AS varchar) END AS "finishing_position"
+               FROM counts_participants AS p
+               LEFT JOIN selected_corgi_stats AS c  ON p.raceid = c.raceid
+               ORDER BY p.racedate
+ 
+'''%(user_input,user_input)
+scorg_df = pd.read_sql(scorg_query, conn)
+print(scorg_df)
+#conn.close()
