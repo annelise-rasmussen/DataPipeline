@@ -1,0 +1,137 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from statsmodels.stats.proportion import proportions_ztest
+import statsmodels.api as sm
+
+# Connect to the database for analysis
+# NOTE: Replace these with placeholder values in production code
+conn = psycopg2.connect(
+    database='your_database',
+    user='your_username',
+    password='your_password',
+    host='your_host',
+    port='your_port'
+)
+
+# Analysis 1: Customer Betting Patterns
+query = '''
+    WITH customer_bets AS (
+        SELECT customer_id, COUNT(*) as bet_count, 
+               SUM(CASE WHEN bettor_result = 'win' THEN 1 ELSE 0 END) as wins,
+               SUM(bet_amount) as total_bet, SUM(commission) as total_commission
+        FROM placed_bet
+        GROUP BY customer_id
+    )
+    SELECT c.customer_age, c.customer_type, c.customer_income, c.household_size,
+           cb.bet_count, cb.wins, cb.total_bet, cb.total_commission
+    FROM customer c
+    JOIN customer_bets cb ON c.customer_id = cb.customer_id
+'''
+df_customer_bets = pd.read_sql(query, conn)
+
+# Visualize betting patterns
+plt.figure(figsize=(12,6))
+sns.scatterplot(data=df_customer_bets, x='customer_income', y='total_bet', hue='customer_type')
+plt.title('Betting Amount vs Income by Customer Type')
+plt.show()
+
+# Analysis 2: Team Performance
+query = '''
+    SELECT team_home as team, 
+           AVG(score_home) as avg_score, 
+           COUNT(*) as games_played,
+           SUM(CASE WHEN score_home > score_away THEN 1 ELSE 0 END) as wins
+    FROM spread_scores
+    GROUP BY team_home
+    ORDER BY avg_score DESC
+'''
+df_team_performance = pd.read_sql(query, conn)
+
+# Visualize team performance
+plt.figure(figsize=(12,6))
+sns.barplot(data=df_team_performance.head(10), x='team', y='avg_score')
+plt.title('Top 10 Teams by Average Score')
+plt.xticks(rotation=45)
+plt.show()
+
+# Analysis 3: Weather Impact on Scores
+query = '''
+    SELECT 
+        CASE 
+            WHEN weather_temperature < 32 THEN 'Cold'
+            WHEN weather_temperature >= 32 AND weather_temperature < 70 THEN 'Mild'
+            ELSE 'Hot'
+        END as temperature_category,
+        AVG(score_home + score_away) as avg_total_score
+    FROM spread_scores
+    WHERE weather_temperature IS NOT NULL
+    GROUP BY temperature_category
+'''
+df_weather_impact = pd.read_sql(query, conn)
+
+# Visualize weather impact
+plt.figure(figsize=(10,6))
+sns.barplot(data=df_weather_impact, x='temperature_category', y='avg_total_score')
+plt.title('Average Total Score by Temperature Category')
+plt.show()
+
+# Analysis 4: Betting Odds Accuracy
+query = '''
+    SELECT 
+        CASE 
+            WHEN ABS(spread_favorite) < 3 THEN 'Close'
+            WHEN ABS(spread_favorite) >= 3 AND ABS(spread_favorite) < 7 THEN 'Moderate'
+            ELSE 'Large'
+        END as spread_category,
+        AVG(CASE WHEN 
+            (team_favorite_id = team_home AND score_home > score_away) OR
+            (team_favorite_id = team_away AND score_away > score_home)
+            THEN 1 ELSE 0 END) as favorite_win_rate
+    FROM spread_scores
+    GROUP BY spread_category
+'''
+df_odds_accuracy = pd.read_sql(query, conn)
+
+# Visualize odds accuracy
+plt.figure(figsize=(10,6))
+sns.barplot(data=df_odds_accuracy, x='spread_category', y='favorite_win_rate')
+plt.title('Favorite Win Rate by Spread Category')
+plt.show()
+
+# Analysis 5: Customer Profitability
+query = '''
+    WITH customer_profits AS (
+        SELECT customer_id,
+               SUM(CASE WHEN bettor_result = 'win' THEN bet_amount ELSE -bet_amount END) as profit,
+               SUM(commission) as total_commission
+        FROM placed_bet
+        GROUP BY customer_id
+    )
+    SELECT c.customer_age, c.customer_income, c.customer_type,
+           cp.profit, cp.total_commission,
+           cp.profit - cp.total_commission as net_profit
+    FROM customer c
+    JOIN customer_profits cp ON c.customer_id = cp.customer_id
+'''
+df_customer_profits = pd.read_sql(query, conn)
+
+# Visualize customer profitability
+plt.figure(figsize=(12,6))
+sns.scatterplot(data=df_customer_profits, x='customer_income', y='net_profit', hue='customer_type')
+plt.title('Customer Net Profit vs Income by Customer Type')
+plt.show()
+
+# Statistical Analysis: Does customer type affect profitability?
+online_profits = df_customer_profits[df_customer_profits['customer_type'] == 'online']['net_profit']
+offline_profits = df_customer_profits[df_customer_profits['customer_type'] != 'online']['net_profit']
+
+t_stat, p_value = sm.stats.ttest_ind(online_profits, offline_profits)
+print(f"T-statistic: {t_stat}, p-value: {p_value}")
+if p_value < 0.05:
+    print("There is a significant difference in profitability between online and offline customers.")
+else:
+    print("There is no significant difference in profitability between online and offline customers.")
+
+conn.close()
