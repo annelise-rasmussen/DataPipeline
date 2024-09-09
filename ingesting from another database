@@ -1,0 +1,57 @@
+#ingesting data from another database
+conn = psycopg2.connect(
+            database='iwdm',
+            user='username',
+            password= 'password',
+            host='data6330.cviwmuw2ykh1.us-west-2.rds.amazonaws.com',
+            port='5432'
+)
+
+cursor = conn.cursor()
+cursor.execute(''' 
+            CREATE TABLE IF NOT EXISTS customer (
+                customer_id SERIAL PRIMARY KEY,
+                customer_fname VARCHAR(25),
+                customer_lname VARCHAR(30),
+                customer_age NUMERIC(2,0),
+                customer_type VARCHAR(6),
+                customer_since CHAR(4),
+                customer_income SMALLINT,
+                household_size NUMERIC(2,0),
+                mode_color VARCHAR(6)
+                
+
+            );
+            ''')
+conn.commit()
+
+conn = pymssql.connect(
+    database='ironwill', 
+    user='5330user', 
+    password='pipelinesnow', 
+    host='stairway.usu.edu', 
+   
+)
+query = '''
+        SELECT *
+        FROM customertable
+'''
+
+df= pd.read_sql(query,conn)
+
+for x in df.index:
+    z = df.loc[x]['customer_name'].strip().split(', ')
+    conn = psycopg2.connect(
+            database='iwdm',
+            user='username',
+            password= 'password',
+            host='data6330.cviwmuw2ykh1.us-west-2.rds.amazonaws.com',
+            port='5432'
+)
+
+    cursor = conn.cursor()
+    cursor.execute('''
+                INSERT INTO customer (customer_id, customer_fname,customer_lname , customer_age, customer_type, customer_since,customer_income,household_size,mode_color)
+                VALUES(%d,'%s','%s',%s,'%s','%s',%d,%s,'%s') '''% (df.loc[x]['customer_id'], z[0],z[1],df.loc[x]['customer_age'],df.loc[x]['customer_type'],df.loc[x]['customer_since'],df.loc[x]['customer_income'],df.loc[x]['household_size'], df.loc[x]['mode_color'])                
+                )
+    conn.commit()
