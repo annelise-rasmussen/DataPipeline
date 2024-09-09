@@ -1,0 +1,101 @@
+#camden freeze's code to merge and create/merge from data being pulled into the datamart, mine is some edits to errors we encountered to process the bet data
+# Reading in the CSVs
+df_teams = pd.read_csv('nfl_teams.csv')
+df_stadiums = pd.read_csv('nfl_stadiums.csv', encoding='ISO-8859-1')
+df_scores = pd.read_csv('spread_scores-1.csv')
+
+# Strip whitespace from string columns in all dataframes
+df_teams = df_teams.applymap(lambda x: x.strip() if isinstance(x,str) else x)
+df_stadiums = df_stadiums.applymap(lambda x: x.strip() if isinstance(x,str) else x)
+df_scores = df_scores.applymap(lambda x: x.strip() if isinstance(x,str) else x)
+
+# Process stadiums data, create new columns
+df_stadiums[['stadium_state', 'stadium_city']] = df_stadiums['stadium_location'].str.split(',', expand=True)
+df_stadiums['stadium_open'] = df_stadiums['stadium_open'].replace([np.inf, -np.inf], np.nan).fillna(0).astype(int)
+df_stadiums['stadium_close'] = df_stadiums['stadium_close'].replace([np.inf, -np.inf], np.nan).fillna(0).astype(int)
+df_stadiums['stadium_capacity'] = df_stadiums['stadium_capacity'].str.replace(',', '')
+df_stadiums['stadium_capacity'] = df_stadiums['stadium_capacity'].replace([np.inf, -np.inf], np.nan).fillna(0).astype(int)
+
+# Process scores data
+# Creating spreadid primary key
+merged_scores = df_scores.merge(df_teams, left_on='team_home', right_on='team_name', how='left')
+merged_scores = merged_scores.merge(df_teams, left_on='team_away', right_on='team_name', how='left', suffixes=('_home', '_away'))
+
+# Concat columns to create primary key
+df_scores['spreadid'] = (merged_scores['schedule_season'].astype(str) + 
+                         merged_scores['schedule_week'].astype(str).str.zfill(2) + 
+                         '-' +
+                         merged_scores['team_id_home'].astype(str) + 
+                         '-' +
+                         merged_scores['team_id_away'].astype(str))
+
+# Filter scores for recent years and calculate additional metrics
+df_scores = df_scores[df_scores['schedule_season'] >= 2015]
+df_scores['total_score'] = df_scores['score_home'] + df_scores['score_away']
+df_scores['winner_ou'] = df_scores.apply(lambda row: 'over' if row['total_score'] > row['over_under_line'] else 
+                                        ('under' if row['total_score'] < row['over_under_line'] else 'push'), axis=1)
+
+# Function to determine the winner against the spread
+def determine_winner_line(row):
+    if ((row['team_favorite_id'] == row['team_id_home'] and ((row['score_home'] - row['score_away']) > abs(row['spread_favorite']))) or 
+       (row['team_favorite_id'] != row['team_id_home'] and ((row['score_away'] - row['score_home']) < abs(row['spread_favorite'])))):
+        return 'home'
+    elif ((row['team_favorite_id'] == row['team_id_away'] and ((row['score_away'] - row['score_home']) > abs(row['spread_favorite']))) or 
+         (row['team_favorite_id'] != row['team_id_away'] and ((row['score_home'] - row['score_away']) < abs(row['spread_favorite'])))):
+        return 'away'
+    else:
+        return 'push'
+
+df_scores['winner_line'] = merged_scores.apply(determine_winner_line, axis=1)
+
+# Reading in outside tables as dataframes
+# NOTE: Replace these with placeholder values in production code
+conn = pymssql.connect(
+    server='your_server',
+    user='your_username', 
+    password='your_password',
+    database="your_database"
+)
+cursor = conn.cursor()
+
+query = '''
+    select *
+    from customer_table;'''
+
+df_customer = pd.read_sql(query, conn)
+
+query  = '''
+    select *
+    from betlog;'''
+
+df_bet = pd.read_sql(query, conn)
+conn.close()
+
+# Strip whitespace from string columns in customer and bet dataframes
+df_customer = df_customer.applymap(lambda x: x.strip() if isinstance(x,str) else x)
+df_bet = df_bet.applymap(lambda x: x.strip() if isinstance(x,str) else x)
+
+# Process bet data
+df_bet['game_id'] = df_bet['game_id'].str.replace('-LV$','-LVR', regex=True)
+df_bet['game_id'] = df_bet['game_id'].str.replace('-JAC$','-JAX', regex=True)
+df_bet['game_id'] = df_bet['game_id'].str.replace('-LV-','-LVR-')
+df_bet['game_id'] = df_bet['game_id'].str.replace('-JAC-','-JAX-')
+
+# Merge bet data with scores data to determine bet outcomes
+merged_bet = df_bet.merge(df_scores, left_on='game_id', right_on='spreadid', how='left')
+df_bet['bettor_result'] = merged_bet.apply(lambda row: 
+    'win' if (row['bet_on'] == row.get('team_' + str(row['winner_line']), np.nan) or
+              row['bet_on'] == row['winner_ou']) else
+    ('push' if (row['winner_ou'] == 'push' or (row['winner_line'] == 'push'))
+     else 'loss'), axis=1)
+
+# Calculate commission based on bet amount
+def calculate_commission(bet_amount):
+    if bet_amount <= 1000:
+        return bet_amount * 0.1
+    elif bet_amount <= 5000:
+        return 1000 * 0.1 + (bet_amount - 1000) * 0.08
+    else:
+        return 1000 * 0.1 + 4000 * 0.08 + (bet_amount - 5000) * 0.06
+    
+df_bet['commission'] = df_bet['bet_amount'].apply(calculate_commission)
