@@ -1,0 +1,58 @@
+# Import necessary libraries
+import pandas as pd
+import numpy as np
+import psycopg2 
+import pymssql
+from datetime import datetime
+
+# Database connection setup
+# NOTE: Replace these with placeholder values in production code
+conn = psycopg2.connect(
+    database='your_database',
+    user='your_username',
+    password='your_password',
+    host='your_host',
+    port='your_port'
+)
+cursor = conn.cursor()
+
+# Table Creation
+
+# Customer table
+query = '''CREATE TABLE IF NOT EXISTS customer (
+            
+        );'''
+
+cursor.execute(query)
+conn.commit()
+
+# Placed_bet table
+query = '''CREATE TABLE IF NOT EXISTS placed_bet (
+           
+        );'''
+
+cursor.execute(query)
+conn.commit()
+
+# Spread_scores table
+query = '''CREATE TABLE IF NOT EXISTS spread_scores (
+          
+        );'''
+
+cursor.execute(query)
+conn.commit()
+
+# Stadiums table
+query = '''CREATE TABLE IF NOT EXISTS stadiums (
+  
+        );'''
+
+cursor.execute(query)
+conn.commit()
+
+# Teams table
+query = '''CREATE TABLE IF NOT EXISTS teams (
+            
+
+cursor.execute(query)
+conn.commit()
