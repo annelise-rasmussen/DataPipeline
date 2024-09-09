@@ -1,3 +1,6 @@
+ Final Project: NFL Data Processing
+# Names: Annelise Rasmussen and Camden Freeze
+
 # Importing required libraries
 import pymssql
 import numpy as np
@@ -5,15 +8,16 @@ import pandas as pd
 import psycopg2
 
 # List of CSV files to be processed
-csvs = ["nfl_stadiums.csv","nfl_teams.csv", "spread_scores-1.csv"]
+csvs = ["nfl_stadiums.csv", "nfl_teams.csv", "spread_scores-1.csv"]
 
 # Establishing connection to the PostgreSQL database
+# Note: Replace with your actual database connection details
 conn = psycopg2.connect(
-    database='iwdm',
-    user='',
-    password= '',
-    host='',
-    port='5432'
+    database='your_database_name',
+    user='your_username',
+    password='your_password',
+    host='your_host',
+    port='your_port'
 )
 cursor = conn.cursor()
 
@@ -21,20 +25,11 @@ cursor = conn.cursor()
 for l in csvs:
     df = pd.read_csv(l)  # Reading the CSV file into a DataFrame
    
+    # Processing each row in the DataFrame
     for x in df.index:
         if l == 'nfl_stadiums.csv':
             # Processing NFL stadiums data
             z = df.loc[x]['stadium_location'].strip().split(', ')
-            
-            # Re-establishing connection (consider moving this outside the loop for efficiency)
-            conn = psycopg2.connect(
-                database='',
-                user='',
-                password= '',
-                host='',
-                port=''
-            )
-            cursor = conn.cursor()
             
             # Creating the stadiums table if it doesn't exist
             cursor.execute(''' 
@@ -46,18 +41,37 @@ for l in csvs:
             
             # Inserting stadium data into the table
             cursor.execute('''
-            INSERT INTO stadiums (stadium_name, stadium_state, stadium_city, statdium_open, stadium_close, stadium_type, stadium_address, stadium_weather_station_code, stadium_weather_type, stadium_capacity, statdium_surface, station, name, latitude, longitude, elevation)
-            VALUES('%s','%s','%s','%s','%s','%s','%s','%s','%s',%d, '%s','%s','%s',%.4f,%.4f,%.1f)
-            ''' % (df.loc[x]['stadium_name'], z[0], z[1], df.loc[x]['stadium_open'], df.loc[x]['stadium_close'], df.loc[x]['type'], df.loc[x]['address'], df.loc[x]['stadium_weather_station_code'], df.loc[x]['stadium_weather_type'], df.loc[x]['stadium_capacity'], df.loc[x]['stadium_surface'], df.loc[x]['STATION'], df.loc[x]['NAME'], df.loc[x]['LATITUDE'], df.loc[x]['LONGITUDE'], df.loc[x]['ELEVATION']))
+            INSERT INTO stadiums (stadium_name, stadium_state, stadium_city, stadium_open, stadium_close, stadium_type, stadium_address, stadium_weather_station_code, stadium_weather_type, stadium_capacity, stadium_surface, station, name, latitude, longitude, elevation)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (df.loc[x]['stadium_name'], z[0], z[1], df.loc[x]['stadium_open'], df.loc[x]['stadium_close'], df.loc[x]['type'], df.loc[x]['address'], df.loc[x]['stadium_weather_station_code'], df.loc[x]['stadium_weather_type'], df.loc[x]['stadium_capacity'], df.loc[x]['stadium_surface'], df.loc[x]['STATION'], df.loc[x]['NAME'], df.loc[x]['LATITUDE'], df.loc[x]['LONGITUDE'], df.loc[x]['ELEVATION']))
             
             conn.commit()
         elif l == 'nfl_teams.csv':
             # Processing NFL teams data
-            # ... [similar structure as stadiums, creating teams table and inserting data] ...
-        
+            # Creating teams table if it doesn't exist
+            cursor.execute(''' 
+            CREATE TABLE IF NOT EXISTS teams (
+                # ... [table definition] ...
+            );
+            ''')
+            conn.commit()
+            
+            # Inserting team data into the table
+            cursor.execute('''
+            INSERT INTO teams (team_name, team_name_short, team_id, team_id_pfr, team_conference, team_division, team_conference_pre2002, team_division_pre2002)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (df.loc[x]['team_name'], df.loc[x]['team_name_short'], df.loc[x]['team_id'], df.loc[x]['team_id_pfr'], df.loc[x]['team_conference'], df.loc[x]['team_division'], df.loc[x]['team_conference_pre2002'], df.loc[x]['team_division_pre2002']))
+            
+            conn.commit()
+
         else:
             # Processing spread scores data
-            # ... [creating spread_scores table] ...
+            # Creating spread_scores table if it doesn't exist
+            cursor.execute(''' 
+            CREATE TABLE IF NOT EXISTS spread_scores (
+                # ... [table definition] ...
+            );
+            ''')
 
             # Calculating winner_line
             winner_line = ''
@@ -79,59 +93,12 @@ for l in csvs:
             
             # Inserting spread scores data for seasons 2015 and later
             if int(df.loc[x]['schedule_season']) >= 2015:
-                # ... [inserting data into spread_scores table] ...
+                cursor.execute('''
+                INSERT INTO spread_scores (schedule_date, schedule_season, schedule_week, schedule_playoff, team_home, score_home, score_away, team_away, team_favorite_id, spread_favorite, over_under_line, stadium, stadium_neutral, weather_temperature, weather_wind_mph, weather_humidity, weather_detail, winner_line, winner_ou)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (df.loc[x]['schedule_date'], df.loc[x]['schedule_season'], df.loc[x]['schedule_week'], df.loc[x]['schedule_playoff'], df.loc[x]['team_home'], df.loc[x]['score_home'], df.loc[x]['score_away'], df.loc[x]['team_away'], df.loc[x]['team_favorite_id'], df.loc[x]['spread_favorite'], df.loc[x]['over_under_line'], df.loc[x]['stadium'], df.loc[x]['stadium_neutral'], df.loc[x]['weather_temperature'], df.loc[x]['weather_wind_mph'], df.loc[x]['weather_humidity'], df.loc[x]['weather_detail'], winner_line, winner_ou))
+                
+                conn.commit()
 
-# Ingesting data from 5330user database
-# ... [creating customer table] ...
-
-# Connecting to the source database (ironwill)
-conn = pymssql.connect(
-    database='', 
-    user='', 
-    password='', 
-    host='', 
-)
-query = '''
-        SELECT *
-        FROM customertable
-'''
-
-df = pd.read_sql(query, conn)
-
-# Processing and inserting customer data
-for x in df.index:
-    z = df.loc[x]['customer_name'].strip().split(', ')
-    # ... [inserting data into customer table] ...
-
-# Adding placed_bet to database
-# ... [creating placed_bet table] ...
-
-# Fetching bet log data from source database
-conn = pymssql.connect(
-    database='', 
-    user='', 
-    password='', 
-    host='', 
-)
-query = '''
-        SELECT *
-        FROM betlog
-'''
-
-df = pd.read_sql(query, conn)
-
-# Processing and inserting bet data
-for x in df.index:
-    # Calculating commission based on bet amount
-    if int(df.loc[x]['bet_amount']) <= 1000:
-        commission = 0.10 * int(df.loc[x]['bet_amount'])
-    elif int(df.loc[x]['bet_amount']) <= 4000:
-        commission = 0.10 * 1000
-        commission = commission + (0.08 * (int(df.loc[x]['bet_amount']) - 1000))
-    else:
-        commission = (.10*1000 + 0.08*4000) + .06*(int(df.loc[x]['bet_amount'])-5000)
-    
-    # Inserting bet data into placed_bet table
-    # ... [inserting data into placed_bet table] ...
-
-# Note: Join tables with spread_scores to calculate bettor_result column
+# Note: Remember to close the database connection after processing all files
+conn.close()
